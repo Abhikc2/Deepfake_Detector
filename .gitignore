@@ -1,0 +1,38 @@
+# Data
+data/
+checkpoints/
+*.pth
+*.pt
+deepfake_env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual envs
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/
+
+# Temp
+tmp/
+*.tmp
