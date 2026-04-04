@@ -50,6 +50,14 @@ class CNNFeatureExtractor(nn.Module):
             in_features = base.classifier[1].in_features
             self.features = nn.Sequential(base.features, base.avgpool)
 
+        elif backbone == "efficientnet_b2":
+            weights = (
+                models.EfficientNet_B2_Weights.DEFAULT if pretrained else None
+            )
+            base = models.efficientnet_b2(weights=weights)
+            in_features = base.classifier[1].in_features
+            self.features = nn.Sequential(base.features, base.avgpool)
+
         else:
             raise ValueError(f"Unsupported backbone: {backbone}")
 

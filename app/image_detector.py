@@ -55,6 +55,7 @@ def _run_single_face_inference(
     model: torch.nn.Module,
     face_image: np.ndarray,
     device: torch.device,
+    is_sequence_model: bool = True,
     sequence_length: int = SEQUENCE_LENGTH,
     image_size: int = DEFAULT_IMAGE_SIZE,
 ) -> Dict[str, float]:
@@ -65,10 +66,14 @@ def _run_single_face_inference(
         Dict with 'real_prob' and 'fake_prob'.
     """
     tensor = preprocess_image_tensor(face_image, image_size=image_size)
-    sequence = _build_sequence(tensor, sequence_length, device)
+    
+    if is_sequence_model:
+        x_input = _build_sequence(tensor, sequence_length, device)
+    else:
+        x_input = tensor.unsqueeze(0).to(device)
 
     with torch.no_grad():
-        probs = model.predict_proba(sequence)
+        probs = model.predict_proba(x_input)
 
     return {
         "real_prob": probs[0][0].item(),
@@ -82,6 +87,7 @@ def detect_image(
     device: torch.device,
     face_extractor: FaceExtractor,
     sequence_length: int = SEQUENCE_LENGTH,
+    is_sequence_model: bool = True,
 ) -> Dict[str, Any]:
     """
     Full image deepfake detection pipeline.
@@ -166,7 +172,7 @@ def detect_image(
     for face_img in faces:
         try:
             preds = _run_single_face_inference(
-                model, face_img, device, sequence_length
+                model, face_img, device, is_sequence_model, sequence_length
             )
             all_real.append(preds["real_prob"])
             all_fake.append(preds["fake_prob"])

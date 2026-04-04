@@ -30,6 +30,7 @@ from utils.video_to_frames import extract_frames, validate_video_file, get_video
 from utils.yolo_detector import YOLOPersonDetector
 from utils.face_extractor import FaceExtractor
 from models.cnn_lstm import DeepfakeDetector
+from models.cnn_classifier import DeepfakeImageClassifier
 from app.image_detector import detect_image
 from torchvision import transforms
 
@@ -584,6 +585,41 @@ def load_deepfake_model():
     return model, device
 
 
+@st.cache_resource
+def load_image_only_model():
+    """Load the dedicated CNN Image Classifier (auto-detects backbone from checkpoint)."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Default to EfficientNet-B2; overridden if checkpoint has saved args
+    backbone = "efficientnet_b2"
+    feature_dim = 1408
+    _BACKBONE_DIM = {"efficientnet_b2": 1408, "efficientnet_b0": 1280, "resnet18": 512}
+
+    checkpoint_path = Path(__file__).resolve().parent.parent / "checkpoints" / "image" / "best_image_model.pth"
+    checkpoint = None
+    if checkpoint_path.exists():
+        checkpoint = torch.load(str(checkpoint_path), map_location=device, weights_only=False)
+        saved_args = checkpoint.get("args", {})
+        backbone = saved_args.get("backbone", backbone)
+        feature_dim = _BACKBONE_DIM.get(backbone, feature_dim)
+
+    model = DeepfakeImageClassifier(
+        backbone=backbone,
+        pretrained=True,
+        feature_dim=feature_dim,
+        num_classes=2,
+    ).to(device)
+
+    if checkpoint is not None:
+        model.load_state_dict(checkpoint["model_state_dict"])
+        st.sidebar.success(f"Trained Image Model loaded ({backbone})")
+    else:
+        st.sidebar.warning("No image model found — using untrained weights")
+
+    model.eval()
+    return model, device
+
+
 def get_inference_transforms():
     """Get transforms for inference."""
     return transforms.Compose([
@@ -868,7 +904,15 @@ def render_image_tab():
 
                 # Load models
                 face_ext = load_face_extractor()
-                model, device = load_deepfake_model()
+                
+                # Check for dedicated image model
+                ckpt_path = Path(__file__).resolve().parent.parent / "checkpoints" / "best_image_model.pth"
+                if ckpt_path.exists():
+                    model, device = load_image_only_model()
+                    is_seq = False
+                else:
+                    model, device = load_deepfake_model()
+                    is_seq = True
 
                 with st.spinner("Analyzing image…"):
                     result = detect_image(
@@ -876,6 +920,7 @@ def render_image_tab():
                         image_path=tmp_path,
                         device=device,
                         face_extractor=face_ext,
+                        is_sequence_model=is_seq,
                     )
 
                 if result["error"]:

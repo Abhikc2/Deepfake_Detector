@@ -3,6 +3,8 @@ CNN-only Deepfake Image Classifier.
 
 Uses the shared CNNFeatureExtractor backbone with a classifier head
 to classify single images as Real or Fake — no temporal (LSTM) layer.
+
+Default backbone: EfficientNet-B2 (ImageNet pretrained).
 """
 
 import torch
@@ -23,19 +25,19 @@ class DeepfakeImageClassifier(nn.Module):
 
     def __init__(
         self,
-        backbone: str = "resnet18",
+        backbone: str = "efficientnet_b2",
         pretrained: bool = True,
         freeze_cnn: bool = False,
-        feature_dim: int = 512,
+        feature_dim: int = 1408,
         num_classes: int = 2,
         classifier_dropout: float = 0.4,
     ):
         """
         Args:
-            backbone:           CNN backbone name ('resnet18', 'efficientnet_b0').
+            backbone:           CNN backbone name ('efficientnet_b2', 'efficientnet_b0', 'resnet18').
             pretrained:         Use ImageNet pretrained weights.
             freeze_cnn:         Freeze CNN backbone parameters.
-            feature_dim:        CNN output feature dimension.
+            feature_dim:        CNN output feature dimension (1408 for B2, 1280 for B0, 512 for ResNet18).
             num_classes:        Output classes (2 = Real / Fake).
             classifier_dropout: Dropout probability in the classifier head.
         """
@@ -53,11 +55,11 @@ class DeepfakeImageClassifier(nn.Module):
         self.classifier = nn.Sequential(
             nn.LayerNorm(feature_dim),
             nn.Dropout(classifier_dropout),
-            nn.Linear(feature_dim, 256),
-            nn.ReLU(inplace=True),
+            nn.Linear(feature_dim, 512),
+            nn.GELU(),
             nn.Dropout(classifier_dropout * 0.5),
-            nn.Linear(256, 128),
-            nn.ReLU(inplace=True),
+            nn.Linear(512, 128),
+            nn.GELU(),
             nn.Dropout(classifier_dropout * 0.25),
             nn.Linear(128, num_classes),
         )
