@@ -210,6 +210,8 @@ def main():
     # ── Training hyperparameters ─────────────────────────────────────────
     parser.add_argument("--checkpoint_dir", type=str, default="checkpoints/image",
                         help="Directory to save model checkpoints (supports Google Drive paths).")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Path to an existing checkpoint (.pth) to resume/fine-tune from.")
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=1e-4)
@@ -312,6 +314,15 @@ def main():
         feature_dim=feature_dim,
         num_classes=2,
     ).to(device)
+
+    if args.resume:
+        logger.info("Loading pre-trained weights from %s to resume training...", args.resume)
+        if not os.path.exists(args.resume):
+            logger.error("Checkpoint not found at %s. Exiting.", args.resume)
+            sys.exit(1)
+        checkpoint = torch.load(args.resume, map_location=device, weights_only=True)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        logger.info("Successfully loaded weights.")
 
     logger.info(
         "Model: %s (image-only) | feature_dim: %d | Trainable params: %s",
