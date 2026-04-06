@@ -30,9 +30,9 @@ from utils.video_to_frames import extract_frames, validate_video_file, get_video
 from utils.yolo_detector import YOLOPersonDetector
 from utils.face_extractor import FaceExtractor
 from models.cnn_lstm import DeepfakeDetector
-from models.cnn_classifier import DeepfakeImageClassifier
 from app.image_detector import detect_image
 from torchvision import transforms
+from transformers import AutoImageProcessor, AutoModelForImageClassification
 
 # ─── Config ──────────────────────────────────────────────────────────────────
 APP_TITLE = "🛡️ DeepGuard AI"
@@ -586,38 +586,21 @@ def load_deepfake_model():
 
 
 @st.cache_resource
-def load_image_only_model():
-    """Load the dedicated CNN Image Classifier (auto-detects backbone from checkpoint)."""
+def load_hf_image_model():
+    """Load the pretrained Image Classifier from HuggingFace."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model_id = "dima806/deepfake_vs_real_image_detection"
 
-    # Default to EfficientNet-B2; overridden if checkpoint has saved args
-    backbone = "efficientnet_b2"
-    feature_dim = 1408
-    _BACKBONE_DIM = {"efficientnet_b2": 1408, "efficientnet_b0": 1280, "resnet18": 512}
+    try:
+        processor = AutoImageProcessor.from_pretrained(model_id)
+        model = AutoModelForImageClassification.from_pretrained(model_id).to(device)
+        model.eval()
+        st.sidebar.success("Deepfake Image Model loaded ✓")
+    except Exception as e:
+        st.sidebar.error(f"Failed to load image model: {e}")
+        raise
 
-    checkpoint_path = Path(__file__).resolve().parent.parent / "checkpoints" / "image" / "best_image_model.pth"
-    checkpoint = None
-    if checkpoint_path.exists():
-        checkpoint = torch.load(str(checkpoint_path), map_location=device, weights_only=False)
-        saved_args = checkpoint.get("args", {})
-        backbone = saved_args.get("backbone", backbone)
-        feature_dim = _BACKBONE_DIM.get(backbone, feature_dim)
-
-    model = DeepfakeImageClassifier(
-        backbone=backbone,
-        pretrained=True,
-        feature_dim=feature_dim,
-        num_classes=2,
-    ).to(device)
-
-    if checkpoint is not None:
-        model.load_state_dict(checkpoint["model_state_dict"])
-        st.sidebar.success(f"Trained Image Model loaded ({backbone})")
-    else:
-        st.sidebar.warning("No image model found — using untrained weights")
-
-    model.eval()
-    return model, device
+    return model, processor, device
 
 
 def get_inference_transforms():
@@ -771,7 +754,7 @@ def render_sidebar():
         <div class="sidebar-title">[⁉️]  How It Works</div>
         <div class="sidebar-content">
             <strong>🎬 Video:</strong> Upload → Frames → YOLO → MTCNN → CNN+LSTM → Verdict<br><br>
-            <strong>🖼️ Image:</strong> Upload → MTCNN faces → CNN → Verdict
+            <strong>🖼️ Image:</strong> Upload → HuggingFace Model → Verdict
         </div>
         </div>
         """, unsafe_allow_html=True)
@@ -782,11 +765,10 @@ def render_sidebar():
         <div class="sidebar-card">
         <div class="sidebar-title">[🏗️]  Architecture</div>
         <div class="sidebar-content">
-            Video / Image Input<br>
-            → Face Extraction (MTCNN)<br>
-            → Spatial Features (ResNet18)<br>
-            → Temporal Modeling (LSTM)<br>
-            → Real / Fake Classification
+            <strong>Video:</strong> Input → YOLO → MTCNN<br>
+            → ResNet18 → LSTM → Verdict<br><br>
+            <strong>Image:</strong> Full Image<br>
+            → Deepfake Image Classifier → Verdict
         </div>
         </div>
     """, unsafe_allow_html=True)
@@ -902,25 +884,15 @@ def render_image_tab():
             if analyze_img_btn:
                 st.divider()
 
-                # Load models
-                face_ext = load_face_extractor()
-                
-                # Check for dedicated image model
-                ckpt_path = Path(__file__).resolve().parent.parent / "checkpoints" / "best_image_model.pth"
-                if ckpt_path.exists():
-                    model, device = load_image_only_model()
-                    is_seq = False
-                else:
-                    model, device = load_deepfake_model()
-                    is_seq = True
+                # Load model
+                model, processor, device = load_hf_image_model()
 
-                with st.spinner("Analyzing image…"):
+                with st.spinner("Analyzing image with Deepfake Classifier…"):
                     result = detect_image(
                         model=model,
+                        processor=processor,
                         image_path=tmp_path,
                         device=device,
-                        face_extractor=face_ext,
-                        is_sequence_model=is_seq,
                     )
 
                 if result["error"]:

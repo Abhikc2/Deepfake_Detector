@@ -315,15 +315,6 @@ def main():
         num_classes=2,
     ).to(device)
 
-    if args.resume:
-        logger.info("Loading pre-trained weights from %s to resume training...", args.resume)
-        if not os.path.exists(args.resume):
-            logger.error("Checkpoint not found at %s. Exiting.", args.resume)
-            sys.exit(1)
-        checkpoint = torch.load(args.resume, map_location=device, weights_only=True)
-        model.load_state_dict(checkpoint["model_state_dict"])
-        logger.info("Successfully loaded weights.")
-
     logger.info(
         "Model: %s (image-only) | feature_dim: %d | Trainable params: %s",
         args.backbone,
@@ -346,11 +337,29 @@ def main():
     os.makedirs(args.checkpoint_dir, exist_ok=True)
     best_val_loss = float("inf")
     epochs_no_improve = 0
+    start_epoch = 1
+
+    if args.resume:
+        logger.info("Loading checkpoint from %s to resume full training state...", args.resume)
+        if not os.path.exists(args.resume):
+            logger.error("Checkpoint not found at %s. Exiting.", args.resume)
+            sys.exit(1)
+        checkpoint = torch.load(args.resume, map_location=device, weights_only=False)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        if "optimizer_state_dict" in checkpoint:
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        if "scaler_state_dict" in checkpoint:
+            scaler.load_state_dict(checkpoint["scaler_state_dict"])
+        if "epoch" in checkpoint:
+            start_epoch = checkpoint["epoch"] + 1
+        if "val_loss" in checkpoint:
+            best_val_loss = checkpoint["val_loss"]
+        logger.info("Successfully loaded state. Resuming from epoch %d.", start_epoch)
 
     # ── Training loop ────────────────────────────────────────────────────
     logger.info("═══ Starting image training ═══")
 
-    for epoch in range(1, args.epochs + 1):
+    for epoch in range(start_epoch, args.epochs + 1):
         t0 = time.time()
 
         train_loss, train_acc = train_one_epoch(
